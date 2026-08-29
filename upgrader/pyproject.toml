@@ -1,0 +1,20 @@
+[project]
+name = "upgrader"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "el-hoffer", email = "lhoffer@zscaler.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "requests",
+    "python-dotenv",
+]
+
+[project.scripts]
+upgrader = "upgrader:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
