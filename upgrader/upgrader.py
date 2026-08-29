@@ -19,6 +19,7 @@ headers = {"Content-Type": "application/json", "Authorization": token}
 
 def main():
     #do stuff
+    pass
 
 if __name__ == '__main__':
     main()
