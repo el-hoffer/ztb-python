@@ -70,8 +70,14 @@ class APIClient:
 
     def list_gateways(self) -> List[Dict[str, Any]]:
         """Return gateway records from the API."""
-        data = self._request("GET", "v3/Gateway/")
-        return data["result"]["rows"]
+        data_ztb = self._request("GET", "v3/Gateway/")
+        data_hub = self._request("GET", "v3/Gateway/?gateway_type=access")
+        gateways = data_ztb["result"]["rows"] + data_hub["result"]["rows"]
+        return [
+            gateway
+            for gateway in gateways
+            if gateway.get("gateways", {}).get("operational_state") in {"standalone","active", "standby"}
+        ]
 
     def list_available_versions(self) -> List[str]:
         """Return the globally available versions from the API."""
