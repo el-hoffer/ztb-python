@@ -70,7 +70,7 @@ class APIClient:
 
     def list_gateways(self) -> List[Dict[str, Any]]:
         """Return gateway records from the API."""
-        data = self._request("GET", "v2/Gateway/")
+        data = self._request("GET", "v3/Gateway/")
         return data["result"]["rows"]
 
     def list_available_versions(self) -> List[str]:
@@ -288,12 +288,6 @@ def process_csv(
 
 
 
-def env_default(name: str, fallback: Optional[str] = None) -> Optional[str]:
-    """Return an environment variable value or fallback."""
-    return os.getenv(name, fallback)
-
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -302,12 +296,6 @@ def build_parser() -> argparse.ArgumentParser:
             "variables from the shell or a .env file. The script always reads and "
             "writes gateways.csv in the current working directory."
         )
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=int(env_default("GATEWAY_API_TIMEOUT", "30") or "30"),
-        help="HTTP timeout in seconds (or set GATEWAY_API_TIMEOUT)",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -331,8 +319,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     activate_parser = subparsers.add_parser(
         "activate",
-        help="Read gateways.csv and activate desired versions",
-        description="Read gateways.csv in the current working directory and activate desired versions.",
+        help="Read gateways.csv and activate desired versions/set as default",
+        description="Read gateways.csv in the current working directory and activate desired versions/set as default.",
     )
     activate_parser.add_argument(
         "--dry-run",
@@ -346,7 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def validate_common_args(args: argparse.Namespace) -> Optional[int]:
     """Validate shared configuration before running a command."""
-    required_env_vars = ["GATEWAY_API_apiUrl", "GATEWAY_API_TOKEN"]
+    required_env_vars = ["API_URL", "API_KEY"]
     missing = [name for name in required_env_vars if not os.getenv(name)]
     if missing:
         print(
