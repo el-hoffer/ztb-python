@@ -65,7 +65,7 @@ class APIClient:
         """Return gateway records from the API."""
         data_ztb = self._request("GET", "v3/Gateway/")
         data_hub = self._request("GET", "v3/Gateway/?gateway_type=access")
-        gateways = data_ztb["result"]["rows"]["gateways"] + data_hub["result"]["rows"]["gateways"]
+        gateways = data_ztb["rows"]["gateways"] + data_hub["rows"]["gateways"]
         return [
             gateway
             for gateway in gateways
