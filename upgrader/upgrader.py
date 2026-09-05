@@ -65,11 +65,12 @@ class APIClient:
         """Return gateway records from the API."""
         data_ztb = self._request("GET", "v3/Gateway/")
         data_hub = self._request("GET", "v3/Gateway/?gateway_type=access")
-        gateways = data_ztb["rows"]["gateways"] + data_hub["rows"]["gateways"]
+        all_gws = data_ztb["rows"] + data_hub["rows"]
         return [
             gateway
-            for gateway in gateways
-            if gateway.get("gateways", {}).get("operational_state") in {"standalone","active", "standby"}
+            for row in all_gws
+            for gateway in row.get("gateways", [])
+            if gateway.get("gateways", {}).get("operational_state") in {"standalone", "active", "standby"}
         ]
 
     def list_available_versions(self) -> List[str]:
