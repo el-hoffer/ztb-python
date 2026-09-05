@@ -13,19 +13,12 @@ import os
 from dotenv import load_dotenv
 import requests
 import argparse
-import json
 import csv
-from typing import Any, Dict, Iterable, List, Optional
+import sys
+from typing import Any, Dict, List, Optional
 
 load_dotenv()
 
-apiKey = os.getenv('API_KEY')
-apiUrl = os.getenv('API_URL')
-tokenGen = apiUrl + 'v3/api-key-auth/login'
-token_resp = requests.post(tokenGen, json={"api_Key": apiKey}, timeout=15)
-token_resp.raise_for_status()
-token = token_resp.json()["result"]["delegate_token"]
-headers = {"Content-Type": "application/json", "Authorization": token}
 
 CSV_COLUMNS = [
     "gateway_id",
@@ -45,6 +38,7 @@ class APIClient:
         self.token = token
         self.timeout = timeout
         self.session = requests.Session()
+        self.apiUrl = apiUrl
 
     def _headers(self) -> Dict[str, str]:
         headers = {
@@ -312,6 +306,14 @@ def validate_common_args(args: argparse.Namespace) -> Optional[int]:
 
 
 
+def get_token(apiUrl: str, apiKey: str) -> str:
+    token_url = f"{apiUrl}v3/api-key-auth/login"
+    response = requests.post(token_url, json={"api_key": apiKey}, timeout=15)
+    response.raise_for_status()
+    return response.json()["result"]["delegate_token"]
+
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI entry point."""
     parser = build_parser()
@@ -320,6 +322,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     validation_exit_code = validate_common_args(args)
     if validation_exit_code is not None:
         return validation_exit_code
+    
+    apiKey = os.getenv("API_KEY")
+    apiUrl = os.getenv("API_URL")
+    token = get_token(apiUrl, apiKey)
 
     client = APIClient(
         apiUrl=apiUrl,
