@@ -31,7 +31,6 @@ CSV_COLUMNS = [
     "gateway_id",
     "gateway_name",
     "active_version",
-    "default_version",
     "downloaded_version_1",
     "downloaded_version_2",
     "downloaded_version_3",
@@ -117,56 +116,18 @@ class APIClient:
             "activate": activate_response,
         }
 
-def first_non_empty(data: Dict[str, Any], keys: Iterable[str], default: str = "") -> str:
-    """Return the first non-empty value for any key in keys as a string."""
-    for key in keys:
-        value = data.get(key)
-        if value not in (None, ""):
-            return str(value)
-    return default
-
-
-
-def dedupe_preserve_order(values: Iterable[str]) -> List[str]:
-    """Return values without duplicates, preserving input order."""
-    seen = set()
-    result = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            result.append(value)
-    return result
-
 
 
 def normalize_downloaded_versions(gateway: Dict[str, Any]) -> List[str]:
-    """Extract up to three downloaded versions using common schema patterns.
-
-    Adjust this function if your gateway payload stores downloaded versions in a
-    different field or nested structure.
-    """
-    candidates = [
-        gateway.get("downloaded_versions"),
-        gateway.get("downloadedVersions"),
-        gateway.get("versions"),
-        gateway.get("installed_versions"),
-        gateway.get("installedVersions"),
-    ]
+    """Extract up to three downloaded versions"""
 
     versions: List[str] = []
-    for candidate in candidates:
-        if isinstance(candidate, list):
-            for item in candidate:
-                if isinstance(item, dict):
-                    version = first_non_empty(item, ["version", "name", "label", "id"])
-                    if version:
-                        versions.append(version)
-                elif item not in (None, ""):
-                    versions.append(str(item))
-            if versions:
-                break
+    for image in gateway["sw_image_status"]["images"]:
+       version = image["version"]
+       if version:
+           versions.append(str(version))
 
-    return dedupe_preserve_order(versions)[:3]
+    return versions[:3]
 
 
 
@@ -175,17 +136,15 @@ def gateway_to_csv_row(gateway: Dict[str, Any], available_versions: List[str]) -
 
     Adjust key names here if your API uses different fields.
     """
-    gateway_id = first_non_empty(gateway, ["gateway_id", "gatewayId", "id", "uuid"])
-    gateway_name = first_non_empty(gateway, ["gateway_name", "gatewayName", "name", "hostname"])
-    active_version = first_non_empty(gateway, ["active_version", "activeVersion", "current_version", "currentVersion"])
-    default_version = first_non_empty(gateway, ["default_version", "defaultVersion", "fallback_version", "fallbackVersion"])
+    gateway_id = gateway["gateway_id"]
+    gateway_name = gateway["display_name"]
+    active_version = gateway["running_version"]
     downloaded = normalize_downloaded_versions(gateway)
 
     row = {
         "gateway_id": gateway_id,
         "gateway_name": gateway_name,
         "active_version": active_version,
-        "default_version": default_version,
         "downloaded_version_1": downloaded[0] if len(downloaded) > 0 else "",
         "downloaded_version_2": downloaded[1] if len(downloaded) > 1 else "",
         "downloaded_version_3": downloaded[2] if len(downloaded) > 2 else "",
