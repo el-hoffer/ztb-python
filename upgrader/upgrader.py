@@ -16,6 +16,7 @@ import argparse
 import csv
 import sys
 from typing import Any, Dict, List, Optional
+from urllib.parse import unquote
 
 load_dotenv()
 
@@ -65,19 +66,23 @@ class APIClient:
         """Return gateway records from the API."""
         data_ztb = self._request("GET", "v3/Gateway/")
         data_hub = self._request("GET", "v3/Gateway/?gateway_type=access")
-        all_gws = data_ztb["rows"] + data_hub["rows"]
+        all_gws = data_ztb.get("rows", []) + data_hub.get("rows", [])
         return [
             gateway
             for row in all_gws
             for gateway in row.get("gateways", [])
-            if gateway.get("gateways", {}).get("operational_state") in {"standalone", "active", "standby"}
+            if gateway.get("operational_state") in {"standalone", "active", "standby"}
         ]
 
     def list_available_versions(self) -> List[str]:
         """Return the globally available versions from the API."""
         data = self._request("GET", "v2/Gateway/releases")
         items = data.get("result", [])
-        return [item["version_number"] for item in items if item.get("version_number")]
+        return [
+            unquote(item["version_number"])
+            for item in items
+            if item.get("version_number")
+        ]
 
     def download_version(self, gateway_id: str, version: str) -> Any:
         """Request download of a version for a gateway."""
