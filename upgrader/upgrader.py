@@ -357,9 +357,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return validation_exit_code
 
     client = APIClient(
-        apiUrl=os.getenv("GATEWAY_API_apiUrl", ""),
-        token=os.getenv("GATEWAY_API_TOKEN"),
-        timeout=args.timeout,
+        apiUrl=apiUrl,
+        token=token,
     )
 
     try:
