@@ -25,6 +25,7 @@ CSV_COLUMNS = [
     "gateway_id",
     "gateway_name",
     "active_version",
+    "default_version",
     "downloaded_version_1",
     "downloaded_version_2",
     "downloaded_version_3",
@@ -118,9 +119,8 @@ class APIClient:
 
 
 
-def normalize_downloaded_versions(gateway: Dict[str, Any]) -> List[str]:
+def downloaded_versions(gateway: Dict[str, Any]) -> List[str]:
     """Extract up to three downloaded versions"""
-
     versions: List[str] = []
     for image in gateway["sw_image_status"]["images"]:
        version = image["version"]
@@ -129,22 +129,29 @@ def normalize_downloaded_versions(gateway: Dict[str, Any]) -> List[str]:
 
     return versions[:3]
 
+def get_default_version(gateway: Dict[str, Any]) -> str:
+    """Return the version marked as default in sw_image_status.images."""
+    for image in gateway.get("sw_image_status", {}).get("images", []):
+        if image.get("is_default") is True:
+            version = image.get("version")
+            return unquote(str(version)) if version else ""
+    return ""
+
 
 
 def gateway_to_csv_row(gateway: Dict[str, Any], available_versions: List[str]) -> Dict[str, str]:
-    """Map a gateway payload to the expected CSV row shape.
-
-    Adjust key names here if your API uses different fields.
-    """
+    """Map a gateway payload to CSV."""
     gateway_id = gateway["gateway_id"]
     gateway_name = gateway["display_name"]
     active_version = gateway["running_version"]
-    downloaded = normalize_downloaded_versions(gateway)
+    default_version = get_default_version(gateway)
+    downloaded = downloaded_versions(gateway)
 
     row = {
         "gateway_id": gateway_id,
         "gateway_name": gateway_name,
         "active_version": active_version,
+        "default_version": default_version,
         "downloaded_version_1": downloaded[0] if len(downloaded) > 0 else "",
         "downloaded_version_2": downloaded[1] if len(downloaded) > 1 else "",
         "downloaded_version_3": downloaded[2] if len(downloaded) > 2 else "",
