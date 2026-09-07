@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 """Gateway version management CLI.
-This script provides three subcommands:
-1) generate-template - build a CSV template from API data
-2) download - read the CSV and request version downloads
-3) activate - read the CSV and request version activation
+This script provides four subcommands (all of which support --dry-run):
+1) generate-template - build a CSV template based on current state
+2) download - read the CSV and download the selected version
+3) set-default - read the CSV and set the selected version as default
+4) activate - read the CSV and activate the selected version
 """
 
 from __future__ import annotations
@@ -80,70 +81,75 @@ class APIClient:
         data = self._request("GET", "v2/Gateway/releases")
         items = data.get("result", [])
         return [
-            unquote(item["version_number"])
+            normalize_version(item["version_number"])
             for item in items
             if item.get("version_number")
         ]
+    
+    def get_gateway(self, gateway_id: str) -> Dict[str, Any]:
+        """Return the current gateway."""
+        data = self._request("GET", f"v2/Gateway/id/{gateway_id}")
+        return data.get("result", data)
 
     def download_version(self, gateway_id: str, version: str) -> Any:
         """Request download of a version for a gateway."""
         payload = {"action": "download","version": version}
         return self._request("POST", f"v2/Gateway/sw_image_update/id/{gateway_id}", json=payload)
+    
+    def set_default_version(self, gateway_id: str, version: str) -> Any:
+        """Set the default version for a gateway."""
+        payload = {"action": "set_default", "version": version}
+        return self._request("POST", f"v2/Gateway/sw_image_update/id/{gateway_id}", json=payload)
 
     def activate_version(self, gateway_id: str, version: str) -> Any:
-        """Activate and set default version for a gateway."""
-        set_default_payload = {
-            "action": "set_default",
-            "version": version,
-        }
-        set_default_response = self._request(
-            "POST",
-            f"v2/Gateway/sw_image_update/id/{gateway_id}",
-            json=set_default_payload,
-        )
-
-        activate_payload = {
-            "action": "activate",
-            "version": version,
-        }
-        activate_response = self._request(
-            "POST",
-            f"v2/Gateway/sw_image_update/id/{gateway_id}",
-            json=activate_payload,
-        )
-
-        return {
-            "set_default": set_default_response,
-            "activate": activate_response,
-        }
+        """Activate desired version for selected gateways."""
+        payload = {"action": "activate","version": version}
+        return self._request("POST", f"v2/Gateway/sw_image_update/id/{gateway_id}", json=payload)
 
 
 
 def downloaded_versions(gateway: Dict[str, Any]) -> List[str]:
-    """Extract up to three downloaded versions"""
+    """Extract up to three downloaded versions."""
     versions: List[str] = []
-    for image in gateway["sw_image_status"]["images"]:
-       version = image["version"]
-       if version:
-           versions.append(str(version))
-
+    for image in get_gateway_images(gateway):
+        version = normalize_version(image.get("version"))
+        if version:
+            versions.append(version)
     return versions[:3]
 
 def get_default_version(gateway: Dict[str, Any]) -> str:
     """Return the version marked as default in sw_image_status.images."""
-    for image in gateway.get("sw_image_status", {}).get("images", []):
+    for image in get_gateway_images(gateway):
         if image.get("is_default") is True:
-            version = image.get("version")
-            return unquote(str(version)) if version else ""
+            return normalize_version(image.get("version"))
     return ""
 
+def normalize_version(value: Any) -> str:
+    """Normalize version strings from the API/CSV."""
+    if value is None:
+        return ""
+    return unquote(str(value)).strip()
 
+def get_gateway_images(gateway: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return sw_image_status.images safely."""
+    sw_image_status = gateway.get("sw_image_status") or {}
+    images = sw_image_status.get("images") or []
+    return [image for image in images if isinstance(image, dict)]
+
+def get_all_downloaded_versions(gateway: Dict[str, Any]) -> List[str]:
+    """Return all downloaded versions present on the gateway."""
+    versions: List[str] = []
+    for image in get_gateway_images(gateway):
+        version = normalize_version(image.get("version"))
+        if version:
+            versions.append(version)
+    return versions
 
 def gateway_to_csv_row(gateway: Dict[str, Any], available_versions: List[str]) -> Dict[str, str]:
     """Map a gateway payload to CSV."""
     gateway_id = gateway["gateway_id"]
     gateway_name = gateway["display_name"]
-    active_version = gateway["running_version"]
+    active_version = normalize_version(gateway.get("running_version"))
     default_version = get_default_version(gateway)
     downloaded = downloaded_versions(gateway)
 
@@ -159,8 +165,6 @@ def gateway_to_csv_row(gateway: Dict[str, Any], available_versions: List[str]) -
         "available_versions": ";".join(available_versions),
     }
     return row
-
-
 
 def generate_template(client: APIClient) -> int:
     """Generate a CSV template populated from gateway and version APIs."""
@@ -195,8 +199,8 @@ def process_csv(
     action: str,
     dry_run: bool = False,
 ) -> int:
-    """Process download or activation requests from a CSV file."""
-    if action not in {"download", "activate"}:
+    """Process download, set-default, or activation requests from a CSV file."""
+    if action not in {"download", "activate", "set-default"}:
         raise ValueError(f"Unsupported action: {action}")
 
     success_count = 0
@@ -205,7 +209,11 @@ def process_csv(
 
     with open(csv_path, "r", newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
-        missing_columns = [col for col in ("gateway_id", "desired_version", "available_versions") if col not in reader.fieldnames]
+        missing_columns = [
+            col
+            for col in ("gateway_id", "desired_version", "available_versions")
+            if col not in reader.fieldnames
+        ]
         if missing_columns:
             print(f"Error: CSV is missing required columns: {', '.join(missing_columns)}")
             return 2
@@ -213,8 +221,11 @@ def process_csv(
         for row_number, row in enumerate(reader, start=2):
             gateway_id = (row.get("gateway_id") or "").strip()
             gateway_name = (row.get("gateway_name") or "").strip()
-            desired_version = (row.get("desired_version") or "").strip()
-            available_versions = parse_available_versions((row.get("available_versions") or "").strip())
+            desired_version = normalize_version(row.get("desired_version"))
+            available_versions = [
+                normalize_version(version)
+                for version in parse_available_versions((row.get("available_versions") or "").strip())
+            ]
             label = gateway_name or gateway_id or f"row {row_number}"
 
             if not gateway_id:
@@ -234,22 +245,74 @@ def process_csv(
                 )
                 continue
 
-            if dry_run:
-                success_count += 1
-                print(f"[DRY-RUN] would {action} version '{desired_version}' for {label}")
-                continue
-
             try:
+                if action == "set-default":
+                    gateway = client.get_gateway(gateway_id)
+                    current_default = get_default_version(gateway)
+                    current_downloaded = get_all_downloaded_versions(gateway)
+
+                    if desired_version == current_default:
+                        skipped_count += 1
+                        print(
+                            f"[SKIP] {label}: version '{desired_version}' is already the default"
+                        )
+                        continue
+
+                    if desired_version not in current_downloaded:
+                        failure_count += 1
+                        print(
+                            f"[FAIL] {label}: version '{desired_version}' is not downloaded on this gateway. "
+                            f"Download it first, then run set-default."
+                        )
+                        continue
+
+                    if dry_run:
+                        success_count += 1
+                        print(f"[DRY-RUN] would set default version '{desired_version}' for {label}")
+                        continue
+
+                    client.set_default_version(gateway_id=gateway_id, version=desired_version)
+                    success_count += 1
+                    print(f"[OK] {label}: set-default requested for version '{desired_version}'")
+                    continue
+
+                if action == "activate":
+                    gateway = client.get_gateway(gateway_id)
+                    current_default = get_default_version(gateway)
+
+                    if current_default and desired_version != current_default:
+                        print(
+                            f"[WARN] {label}: version '{desired_version}' is not currently the default "
+                            f"(current default: '{current_default}'). Activation will still be requested."
+                        )
+
+                    if dry_run:
+                        success_count += 1
+                        print(f"[DRY-RUN] would activate version '{desired_version}' for {label}")
+                        continue
+
+                    client.activate_version(gateway_id=gateway_id, version=desired_version)
+                    success_count += 1
+                    print(f"[OK] {label}: activate requested for version '{desired_version}'")
+                    continue
+
+                if dry_run:
+                    success_count += 1
+                    print(f"[DRY-RUN] would download version '{desired_version}' for {label}")
+                    continue
+
                 if action == "download":
                     client.download_version(gateway_id=gateway_id, version=desired_version)
-                else:
-                    client.activate_version(gateway_id=gateway_id, version=desired_version)
-                success_count += 1
-                print(f"[OK] {label}: {action} requested for version '{desired_version}'")
+                    success_count += 1
+                    print(f"[OK] {label}: download requested for version '{desired_version}'")
+                    continue
+
+                raise ValueError(f"Unhandled action: {action}")
+
             except requests.RequestException as exc:
                 failure_count += 1
                 print(f"[FAIL] {label}: {action} request failed: {exc}")
-            except Exception as exc:  # pragma: no cover - defensive logging for CLI use
+            except Exception as exc:  # pragma: no cover
                 failure_count += 1
                 print(f"[FAIL] {label}: unexpected error: {exc}")
 
@@ -283,7 +346,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read gateways.csv and download desired versions",
         description="Read gateways.csv in the current working directory and download desired versions.",
     )
+
     download_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate rows in gateways.csv and print actions without calling the API",
+    )
+
+    set_default_parser = subparsers.add_parser(
+        "set-default",
+        help="Read gateways.csv and set desired versions as default",
+        description="Read gateways.csv in the current working directory and set desired versions as default.",
+    )
+
+    set_default_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Validate rows in gateways.csv and print actions without calling the API",
@@ -291,8 +367,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     activate_parser = subparsers.add_parser(
         "activate",
-        help="Read gateways.csv and activate desired versions/set as default",
-        description="Read gateways.csv in the current working directory and activate desired versions/set as default.",
+        help="Read gateways.csv and activate desired versions",
+        description="Read gateways.csv in the current working directory and activate desired versions.",
     )
     activate_parser.add_argument(
         "--dry-run",
@@ -350,6 +426,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return generate_template(client=client)
         if args.command == "download":
             return process_csv(client=client, csv_path="gateways.csv", action="download", dry_run=args.dry_run)
+        if args.command == "set-default":
+            return process_csv(client=client, csv_path="gateways.csv", action="set-default", dry_run=args.dry_run)
         if args.command == "activate":
             return process_csv(client=client, csv_path="gateways.csv", action="activate", dry_run=args.dry_run)
         parser.error(f"Unknown command: {args.command}")
