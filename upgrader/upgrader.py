@@ -6,6 +6,8 @@ This script provides four subcommands (all of which support --dry-run):
 2) download - read the CSV and download the selected version
 3) set-default - read the CSV and set the selected version as default
 4) activate - read the CSV and activate the selected version
+
+Example usage:  "python3 upgrader.py generate-template" or "python upgrader.py activate --dry-run"
 """
 
 from __future__ import annotations
