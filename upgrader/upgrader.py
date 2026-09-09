@@ -27,6 +27,7 @@ load_dotenv()
 CSV_COLUMNS = [
     "gateway_id",
     "gateway_name",
+    "gateway_state",
     "active_version",
     "default_version",
     "downloaded_version_1",
@@ -151,6 +152,7 @@ def gateway_to_csv_row(gateway: Dict[str, Any], available_versions: List[str]) -
     """Map a gateway payload to CSV."""
     gateway_id = gateway["gateway_id"]
     gateway_name = gateway["display_name"]
+    gateway_state = gateway["operational_state"]
     active_version = normalize_version(gateway.get("running_version"))
     default_version = get_default_version(gateway)
     downloaded = downloaded_versions(gateway)
@@ -158,6 +160,7 @@ def gateway_to_csv_row(gateway: Dict[str, Any], available_versions: List[str]) -
     row = {
         "gateway_id": gateway_id,
         "gateway_name": gateway_name,
+        "gateway_state": gateway_state,
         "active_version": active_version,
         "default_version": default_version,
         "downloaded_version_1": downloaded[0] if len(downloaded) > 0 else "",
