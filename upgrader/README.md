@@ -23,7 +23,9 @@ The tool is designed to let you:
 
 - Python 3.9+
 - Network access to the gateway management API
-- A valid API key and URL specified in .env
+- A valid API key and URL specified in .env as follows:
+API_KEY=<API key generated from ZTB portal>
+API_URL=https://exampletenant-api.goairgap.com/api/
 
 ---
 
